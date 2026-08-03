@@ -402,6 +402,80 @@ sub dostatus6 {
 	return;
 }
 # end dostatus
+
+###############################################################################
+# Subroutine: sys_firewall_cmd
+# Core interception and runtime translation router for CSF backend routing
+###############################################################################
+sub sys_firewall_cmd {
+    my ($cmd_args) = @_;
+    my $action_cmd = "";
+
+    # 1. FAST PATH: Legacy iptables Engine
+    if ($config{NFTABLES_ENGINE} eq "0") {
+        $action_cmd = "/sbin/iptables " . $cmd_args;
+        system($action_cmd);
+        return;
+    }
+
+    # 2. TRANSLATION PATH: Native nftables Engine (NFTABLES_ENGINE = "1")
+    # We must intercept legacy syntax (-m multiport --dports) and convert it
+    
+    my $nft_base = "nft add rule inet csf_firewall ";
+    my $nft_chain = "";
+    my $nft_match = "";
+    my $nft_target = "";
+
+    # Determine Chain
+    if ($cmd_args =~ /-A INPUT/ || $cmd_args =~ /-I INPUT/) { $nft_chain = "input "; }
+    if ($cmd_args =~ /-A OUTPUT/ || $cmd_args =~ /-I OUTPUT/) { $nft_chain = "output "; }
+    if ($cmd_args =~ /-A PREROUTING/) { $nft_chain = "prerouting "; }
+
+    # Determine Protocol
+    if ($cmd_args =~ /-p tcp/) { $nft_match .= "tcp "; }
+    if ($cmd_args =~ /-p udp/) { $nft_match .= "udp "; }
+    if ($cmd_args =~ /-p icmp/) { $nft_match .= "icmp "; }
+
+    # Parse Multiport & Dports into native comma-separated nft sets
+    if ($cmd_args =~ /-m multiport --dports ([\d,\:]+)/) {
+        my $ports = $1;
+        $ports =~ s/:/-/g; # Convert iptables range 30000:35000 to nftables 30000-35000
+        $nft_match .= "dport { $ports } ";
+    } elsif ($cmd_args =~ /--dport (\d+)/) {
+        $nft_match .= "dport $1 ";
+    }
+
+    # Parse Source/Dest IPs
+    if ($cmd_args =~ /-s ([\d\.\/]+)/) { $nft_match .= "ip saddr $1 "; }
+    if ($cmd_args =~ /-d ([\d\.\/]+)/) { $nft_match .= "ip daddr $1 "; }
+
+    # Extract the Target Action (-j)
+    if ($cmd_args =~ /-j ([A-Z_]+)/) {
+        my $target = $1;
+        
+        # Standard Targets
+        if ($target eq "DROP") { $nft_target = "drop"; }
+        elsif ($target eq "ACCEPT") { $nft_target = "accept"; }
+        
+        # xtables-addons cross-compatibility bridge (CONFIG_NFT_COMPAT)
+        # This allows XDP/nftables to natively trigger TARPIT, CHAOS, DELUDE, ECHO
+        elsif ($target =~ /^(TARPIT|CHAOS|DELUDE|ECHO)$/) {
+            $nft_target = "counter xt " . $target;
+        }
+    }
+
+	# Execute the fully translated, high-performance nftables rule
+    # FIXED: Split into array to prevent shell injection via malicious comments
+    if ($nft_chain ne "" && $nft_target ne "") {
+        my @safe_exec = ("nft", "add", "rule", "inet", "csf_firewall", split(' ', $nft_chain . $nft_match . $nft_target));
+        system(@safe_exec);
+    } else {
+        # Fallback to legacy
+        my @legacy_exec = ("/sbin/iptables", split(' ', $cmd_args));
+        system(@legacy_exec);
+    }
+}
+
 ###############################################################################
 # start doversion
 sub doversion {

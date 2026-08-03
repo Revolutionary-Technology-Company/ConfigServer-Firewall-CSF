@@ -51,3 +51,17 @@ else
 	echo
 	sh install.generic.sh
 fi
+
+# =======================================================================
+# Dynamic Feature Loader (Install)
+# =======================================================================
+if [ -d "install.d" ]; then
+    echo "[+] Loading custom installation features from install.d/..."
+    for feature in install.d/*.sh; do
+        if [ -f "$feature" ]; then
+            echo "    -> Executing $feature"
+            chmod +x "$feature"
+            . "$feature"
+        fi
+    done
+fi

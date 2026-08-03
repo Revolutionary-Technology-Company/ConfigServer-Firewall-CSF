@@ -75,3 +75,17 @@ rm -Rfv /etc/csf /usr/local/csf /var/lib/csf
 
 echo
 echo "...Done"
+
+# =======================================================================
+# Dynamic Feature Loader (Uninstall)
+# =======================================================================
+if [ -d "uninstall.d" ]; then
+    echo "[-] Loading custom cleanup features from uninstall.d/..."
+    for feature in uninstall.d/*.sh; do
+        if [ -f "$feature" ]; then
+            echo "    -> Executing $feature"
+            chmod +x "$feature"
+            . "$feature"
+        fi
+    done
+fi

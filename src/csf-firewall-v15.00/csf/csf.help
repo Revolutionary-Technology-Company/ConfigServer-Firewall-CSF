@@ -207,6 +207,8 @@ OPTIONS
        -v,  --version
 	      Show csf version
 
+NFTABLES_ENGINE: This option enables the dual-engine execution backend. Setting this to "1" clones all active firewall features, advanced filters, and blocklists into natively compiled nftables and xtables-addons cross-compat engines. Default: 0
+
 FILES
        /etc/csf/csf.conf
 	      The system wide configuration file
